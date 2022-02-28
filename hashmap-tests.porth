@@ -1,0 +1,17 @@
+include "hashmap.porth"
+
+const element_count 1000 end
+memory HM element_count HM.element.size * HM.header.size + end
+
+proc main in
+   element_count HM create-hashmap
+   "hello" "world\n"c HM add-element drop
+   "hello1" "world1\n"c HM add-element drop
+   "hello2" "world2\n"c HM add-element drop
+   "hello3" "warld3\n"c HM add-element drop
+   "hello" HM get-element cstr-to-str puts
+   "hello1" HM get-element cstr-to-str puts
+   "hello3" HM remove-element
+   "hello3" HM get-element NULL ptr!= if "ERROR: read value after deleting\n" eputs end
+   
+end

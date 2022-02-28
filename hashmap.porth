@@ -1,0 +1,263 @@
+include "std.porth"
+
+inline proc endl in "\n" puts end
+
+const HM.element.exists  sizeof(bool) offset end
+const HM.element.key     sizeof(Str)  offset end
+const HM.element.value   sizeof(ptr)  offset end
+const HM.element.size    reset  end
+
+const HM.header.capacity sizeof(int)  offset end
+const HM.header.count    sizeof(int)  offset end
+const HM.header.size     reset  end
+
+inline proc HM.size int -- int in
+   HM.element.size * HM.header.size +
+end
+
+inline proc @HM.header.capacity ptr -- int in
+   HM.header.capacity ptr+ @int
+end
+
+inline proc @HM.header.count ptr -- int in
+   HM.header.count    ptr+ @int
+end
+
+inline proc @HM.header ptr -- int int in 
+   let hashmap in
+    hashmap @HM.header.capacity
+    hashmap @HM.header.count
+   end
+end
+
+inline proc element-address int ptr -- ptr in
+   swap HM.element.size * HM.header.size + ptr+
+end
+
+inline proc element-index ptr ptr -- int in
+   let e_ptr hashmap in
+      e_ptr cast(int) hashmap cast(int) - HM.header.size - HM.element.size /
+   end
+end
+
+inline proc next-element-address ptr ptr -- ptr in
+   let e_ptr hashmap in
+      e_ptr hashmap element-index 1 + 
+      hashmap @HM.header.capacity % 
+      hashmap element-address
+   end
+end
+
+inline proc @HM.element.exists ptr -- bool in
+   HM.element.exists ptr+ @bool
+end
+
+inline proc @HM.element.key ptr -- int ptr in
+   HM.element.key ptr+ @Str
+end
+
+inline proc @HM.element.value ptr -- ptr in
+   HM.element.value ptr+ @ptr
+end
+
+inline proc HM.header.inc-count ptr in
+   HM.header.count ptr+ inc64
+end
+
+inline proc HM.header.dec-count ptr in
+   HM.header.count ptr+ dec64
+end
+
+inline proc !HM.header.capacity int ptr in
+   HM.header.capacity ptr+ !int
+end
+
+proc create-hashmap int ptr in
+   let capacity data in
+      capacity HM.size 0 data memset drop
+      capacity data !HM.header.capacity
+   end
+end
+
+proc pow int int -- int in
+   let base power in
+      1 base power while dup 0 > do
+         let value multiplier power in
+            value
+            power 2 % 1 = if
+               multiplier *
+            end
+            multiplier multiplier *
+            power 1 shr   
+         end
+      end drop drop
+   end
+end
+
+proc compute-hash int ptr -- int in
+   let length key in 
+      length 0 > if
+         0 0 while dup length < do
+            let value index in
+               key index ptr+ @8
+               31 index pow *
+               value +
+               index 1 +
+            end
+         end drop
+      else
+         "ERROR: key with a negative length provided to compute-hash" eputs
+         1 exit
+         0
+      end
+   end
+   dup 0 < if
+      -1 *
+   end
+   dup 0 < if
+      // Hash hit min integer, can't be inverted in 2s complement
+      drop 0
+   end
+end
+
+proc print-hashmap ptr in
+   let hm in
+      hm @HM.header
+      let capacity count in
+         "Elements in hashmap: " puts count putu endl
+         "Capacity: " puts capacity putu endl
+         0 while dup capacity < do
+           let index in
+             index hm element-address
+             let e_ptr in
+                e_ptr @HM.element.exists if
+                  "Element in position " puts index putu endl
+                  " Key: " puts e_ptr @HM.element.key puts endl
+                  " Value: " puts e_ptr @HM.element.value cast(int) putu endl endl
+                end
+             end
+             index 1 +
+           end
+         end drop
+      end
+   end
+end
+
+proc find-position int ptr ptr -- ptr bool in
+  let length key hashmap in
+      length key compute-hash
+      hashmap @HM.header
+      let hash capacity count in
+         hash capacity %
+         let start_index in
+            0 false while over over lnot swap capacity < land do
+              drop
+              dup start_index + capacity %
+              let index in
+                  index hashmap element-address
+                  let e_ptr in
+                     e_ptr @HM.element.exists lnot if
+                        true
+                     else e_ptr @HM.element.key length key streq if*
+                        true
+                     else
+                        1 + false
+                     end
+                  end
+               end
+            end
+            if
+               start_index + capacity % hashmap element-address true
+            else
+               drop NULL false
+            end
+         end
+      end
+  end
+end
+
+proc add-element 
+   int ptr // key
+   ptr     // value
+   ptr     // hashmap
+   --
+   bool    // true on success
+in
+   let length key value hashmap in
+      hashmap @HM.header
+      let capacity count in
+         count capacity < if
+            length key hashmap find-position if
+               let e_ptr in
+                  e_ptr @HM.element.exists lnot if
+                     hashmap HM.header.inc-count
+                  end
+                  true       e_ptr HM.element.exists ptr+ !bool
+                  length key e_ptr HM.element.key    ptr+ !Str
+                  value      e_ptr HM.element.value  ptr+ !ptr
+               end
+               true
+            else
+               "ERROR: Could not insert into hashmap, could not find an insert location\n" eputs
+               drop false
+            end
+         else
+            "ERROR: Could not insert into hashmap, not enough capacity\n" eputs
+            false
+         end
+      end 
+   end
+end
+
+proc clean-elements ptr ptr ptr in
+   let free_position current_position hashmap in
+      free_position cast(int) current_position cast(int) != if
+         current_position @HM.element.exists if
+            current_position @HM.element.key hashmap find-position drop dup cast(int) current_position cast(int) = if
+               // the current element is in the right position, keep looking
+               free_position current_position hashmap next-element-address clean-elements
+            else
+               // the current element is in the wrong position, we need to shift it
+               HM.element.size current_position free_position memcpy drop
+               HM.element.size 0 current_position memset drop
+               current_position current_position hashmap next-element-address clean-elements
+            end
+         end
+      end
+   end
+end
+
+proc remove-element int ptr ptr in
+   let length key hashmap in
+      length key hashmap find-position if
+         let e_ptr in
+            e_ptr @HM.element.exists if
+               hashmap HM.header.dec-count
+               HM.element.size 0 e_ptr memset drop
+               e_ptr e_ptr hashmap next-element-address hashmap clean-elements
+            end
+         end
+      else
+         drop
+      end
+   end
+end
+
+proc get-element int ptr ptr -- ptr in
+   let length key hashmap in
+      length key hashmap find-position if
+         let e_ptr in
+            e_ptr @HM.element.exists if
+               e_ptr @HM.element.value
+            else
+               // No element is stored at the expected index
+               NULL
+            end
+         end
+      else
+         drop NULL
+      end
+   end
+end
+
+
